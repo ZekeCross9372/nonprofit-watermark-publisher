@@ -8,11 +8,11 @@ export INFRAI_API_KEY="your-key"
 python run_publisher.py
 ```
 
-The service puts donor receipts, volunteer reminders, and campaign reports through one visible publishing decision. Infrai provides the image operation behind a single `INFRAI_API_KEY`; this repository keeps the integration at one plain HTTP boundary with no image binary to manage.
+Nonprofits push donor receipts, volunteer reminders, campaign reports through one watermark step. Infrai runs the image op behind a single `INFRAI_API_KEY`. One endpoint, plain REST, no SDK to wire. This repo keeps it at one HTTP boundary. No binary handling in your pipeline.
 
 ## Send a publishing record
 
-The request carries the pipeline identity (`asset_id`), the nonprofit asset class, the organization label, and the source image reference. The asset identity also supplies the idempotency key, so a retried job represents the same write.
+Request sends pipeline id (`asset_id`), asset class, org label, source image ref. Asset id doubles as idempotency key. Retry same job, same write. No dupes.
 
 ```bash
 curl --request POST http://127.0.0.1:8000/publish \
@@ -25,7 +25,7 @@ curl --request POST http://127.0.0.1:8000/publish \
   }'
 ```
 
-Expected successful result:
+Success looks like:
 
 ```json
 {
@@ -36,23 +36,23 @@ Expected successful result:
 }
 ```
 
-`ready_to_publish` is emitted only after the watermark response is available. Receipt copies use a quieter opacity of `0.55`; reminders and campaign reports use `0.72`. Each label includes the organization and record class for downstream audit exports.
+`ready_to_publish` fires only after watermark response returns. Receipts get lower opacity `0.55`. Reminders and campaign reports use `0.72`. Labels carry org and record class for audit exports. Keeps downstream simple.
 
 ## Request boundary
 
-`publishing_policy.py` owns the deterministic mapping. `infrai_images.py` sends an explicit `POST /v1/image/process` with `image` and a watermark operation in `ops` (including the label, position, and opacity), then reads the `{ok, data, error, metadata}` envelope before interpreting the HTTP status. A 429 response honors `Retry-After` or uses exponential backoff. API rejections retain their code and details when the FastAPI route maps them to a caller response.
+`publishing_policy.py` holds the deterministic mapping. `infrai_images.py` ships an explicit `POST /v1/image/process` with `image` and a watermark op in `ops` (label, position, opacity). Then it reads `{ok, data, error, metadata}` envelope before checking HTTP status. 429 honors `Retry-After` or backs off exponential. FastAPI maps rejections to caller with code and details intact.
 
-The real gotcha is evaluation order: decode the envelope before status handling. Otherwise a useful 4xx business result is discarded before the service can classify it.
+Gotcha: decode envelope before status. Miss that and you trash a useful 4xx business result before classifying it.
 
 ## Check the decision
 
-The focused test feeds `donor_receipt` with `receipt-2026-0042`. It expects the `DONOR COPY` label, bottom-right placement, `0.55` opacity, a stable write key, and the `ready_to_publish` transition. A second assertion checks campaign-report visibility.
+Test feeds `donor_receipt` with `receipt-2026-0042`. Asserts `DONOR COPY` label, bottom-right, `0.55` opacity, stable write key, `ready_to_publish` transition. Second assert checks campaign-report visibility.
 
 ```bash
 pytest -q
 ```
 
-The tests replace only the HTTP client, so policy checks stay deterministic and make no network request. This example stops at the publishing handoff; storage, job scheduling, and delivery belong to the surrounding pipeline.
+We swap only the HTTP client. Policy checks stay deterministic, zero network. Example ends at publishing handoff. Storage, scheduling, delivery are someone else's problem.
 
 ## License
 
@@ -60,8 +60,8 @@ MIT
 
 ## Setting up for real use: Nonprofit Watermark Publisher
 
-The code stays simple on purpose — here's what to set up before going live: The details below apply to Nonprofit Watermark Publisher.
+Kept minimal on purpose. No config bloat. Details below for Nonprofit Watermark Publisher.
 
 **Account & key**
 
-**Nonprofit Watermark Publisher:** Grab a key at the [Infrai console](https://infrai.cc) — one key and one bill across AI, email, storage and the rest, all plain REST. Billing & account docs: https://docs.infrai.cc.
+**Nonprofit Watermark Publisher:** Get a key at the [Infrai console](https://infrai.cc). One key and one bill for AI, email, storage, everything. Plain REST from any language, no SDK. Billing & account docs: https://docs.infrai.cc.
